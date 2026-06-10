@@ -1,0 +1,18 @@
+{
+  "items": [
+    {
+      "id": "img-001",
+      "image": "/9j/4AAQSkZJRgABAQAAAQABAAD_PLACEHOLDER_BASE64_REPRESENTING_A_120KB_JPEG...",
+      "top_k": 3
+    },
+    {
+      "id": "img-002",
+      "image": "iVBORw0KGgoAAAANSUhEUgAA_PLACEHOLDER_BASE64_REPRESENTING_A_80KB_PNG...",
+      "top_k": 5
+    },
+    {
+      "id": "img-003",
+      "image": "UklGRiQAAABXRUJQVlA4_PLACEHOLDER_BASE64_REPRESENTING_A_CORRUPT_FILE..."
+    }
+  ]
+}

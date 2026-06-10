@@ -1,0 +1,9 @@
+{
+  "labels": [
+    { "label": "weapon", "probability": 0.9123 },
+    { "label": "violence", "probability": 0.0654 },
+    { "label": "safe", "probability": 0.0223 }
+  ],
+  "model_version": "vmod-2026-05-01",
+  "request_id": "5a1b2c3d-4e5f-4a6b-8c7d-1e2f3a4b5c6d"
+}

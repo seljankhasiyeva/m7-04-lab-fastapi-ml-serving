@@ -1,0 +1,311 @@
+openapi: 3.1.0
+info:
+  title: Vision Moderation as a Service API
+  description: Public API for classifying uploaded images for prohibited content. Supports synchronous, batch, and asynchronous prediction modes.
+  version: 1.0.0
+servers:
+  - url: https://api.visionmod.example.com/v1
+security:
+  - ApiKeyAuth: []
+paths:
+  /predict:
+    post:
+      summary: Classify a single image (synchronous)
+      operationId: predictImage
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/PredictRequest"
+            example:
+              image: "/9j/4AAQSkZJRgABAQAAAQABAAD..."
+              top_k: 5
+      responses:
+        "200":
+          description: Prediction successful
+          headers:
+            X-Request-ID:
+              schema: { type: string, format: uuid }
+              description: Unique identifier for this request
+            X-Model-Version:
+              schema: { type: string }
+              description: Version of the model that produced this response
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/PredictResponse"
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "413": { $ref: "#/components/responses/PayloadTooLarge" }
+        "422": { $ref: "#/components/responses/UnprocessableEntity" }
+        "429": { $ref: "#/components/responses/TooManyRequests" }
+        "503": { $ref: "#/components/responses/ServiceUnavailable" }
+
+  /predict-batch:
+    post:
+      summary: Classify up to 32 images (synchronous)
+      operationId: predictImageBatch
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/BatchPredictRequest"
+      responses:
+        "200":
+          description: Batch prediction completed (individual items may still report errors)
+          headers:
+            X-Request-ID:
+              schema: { type: string, format: uuid }
+              description: Unique identifier for this request
+            X-Model-Version:
+              schema: { type: string }
+              description: Version of the model that produced this response
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/BatchPredictResponse"
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "413": { $ref: "#/components/responses/PayloadTooLarge" }
+        "422": { $ref: "#/components/responses/UnprocessableEntity" }
+        "429": { $ref: "#/components/responses/TooManyRequests" }
+        "503": { $ref: "#/components/responses/ServiceUnavailable" }
+
+  /predict-async:
+    post:
+      summary: Submit a single image for asynchronous classification
+      operationId: predictImageAsync
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/PredictRequest"
+      responses:
+        "202":
+          description: Job accepted for asynchronous processing
+          headers:
+            X-Request-ID:
+              schema: { type: string, format: uuid }
+              description: Unique identifier for this request
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/AsyncSubmitResponse"
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "413": { $ref: "#/components/responses/PayloadTooLarge" }
+        "422": { $ref: "#/components/responses/UnprocessableEntity" }
+        "429": { $ref: "#/components/responses/TooManyRequests" }
+        "503": { $ref: "#/components/responses/ServiceUnavailable" }
+
+  /predictions/{job_id}:
+    get:
+      summary: Retrieve the result of an asynchronous prediction job
+      operationId: getAsyncPrediction
+      parameters:
+        - name: job_id
+          in: path
+          required: true
+          schema: { type: string, format: uuid }
+          description: Identifier returned by POST /v1/predict-async
+      responses:
+        "200":
+          description: Job status and, if complete, the prediction result
+          headers:
+            X-Request-ID:
+              schema: { type: string, format: uuid }
+              description: Unique identifier for this request
+            X-Model-Version:
+              schema: { type: string }
+              description: Version of the model that produced this response (present when status is done)
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/AsyncResult"
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "404": { $ref: "#/components/responses/NotFound" }
+        "429": { $ref: "#/components/responses/TooManyRequests" }
+        "503": { $ref: "#/components/responses/ServiceUnavailable" }
+
+components:
+  securitySchemes:
+    ApiKeyAuth:
+      type: apiKey
+      in: header
+      name: X-API-Key
+      description: Tenant-scoped API key. The tenant is derived server-side from this key and must not be supplied in the request body.
+
+  schemas:
+    Error:
+      type: object
+      required: [code, message, request_id]
+      properties:
+        code: { type: string, description: "Machine-readable error code", examples: ["invalid_image_format"] }
+        message: { type: string, description: "Human-readable error description", examples: ["The uploaded image exceeds the 5 MB size limit."] }
+        request_id: { type: string, format: uuid }
+
+    Label:
+      type: object
+      required: [label, probability]
+      properties:
+        label: { type: string, examples: ["weapon"] }
+        probability: { type: number, format: float, minimum: 0, maximum: 1, examples: [0.9123] }
+
+    PredictRequest:
+      type: object
+      required: [image]
+      properties:
+        image:
+          type: string
+          contentEncoding: base64
+          description: Base64-encoded image bytes (JPEG/PNG/WebP), max 5 MB before encoding
+        top_k:
+          type: integer
+          minimum: 1
+          maximum: 10
+          default: 5
+          description: Number of top labels to return
+
+    PredictResponse:
+      type: object
+      required: [labels, model_version, request_id]
+      properties:
+        labels:
+          type: array
+          minItems: 1
+          maxItems: 10
+          items: { $ref: "#/components/schemas/Label" }
+        model_version: { type: string, examples: ["vmod-2026-05-01"] }
+        request_id: { type: string, format: uuid }
+
+    BatchPredictItem:
+      type: object
+      required: [id, image]
+      properties:
+        id: { type: string, description: "Caller-supplied identifier, echoed in the response", examples: ["img-001"] }
+        image:
+          type: string
+          contentEncoding: base64
+          description: Base64-encoded image bytes (JPEG/PNG/WebP), max 5 MB before encoding
+        top_k:
+          type: integer
+          minimum: 1
+          maximum: 10
+          default: 5
+
+    BatchPredictRequest:
+      type: object
+      required: [items]
+      properties:
+        items:
+          type: array
+          minItems: 1
+          maxItems: 32
+          items: { $ref: "#/components/schemas/BatchPredictItem" }
+
+    BatchPredictResultItem:
+      type: object
+      required: [id, status]
+      properties:
+        id: { type: string, description: "Echoes the caller-supplied id from the request item", examples: ["img-001"] }
+        status: { type: string, enum: [ok, error] }
+        labels:
+          type: array
+          items: { $ref: "#/components/schemas/Label" }
+          description: Present when status is "ok"
+        error:
+          $ref: "#/components/schemas/Error"
+
+    BatchPredictResponse:
+      type: object
+      required: [results, model_version, request_id]
+      properties:
+        results:
+          type: array
+          items: { $ref: "#/components/schemas/BatchPredictResultItem" }
+        model_version: { type: string, examples: ["vmod-2026-05-01"] }
+        request_id: { type: string, format: uuid }
+
+    AsyncSubmitResponse:
+      type: object
+      required: [job_id, status, request_id]
+      properties:
+        job_id: { type: string, format: uuid }
+        status: { type: string, enum: [queued] }
+        request_id: { type: string, format: uuid }
+
+    AsyncResult:
+      type: object
+      required: [job_id, status, request_id]
+      properties:
+        job_id: { type: string, format: uuid }
+        status: { type: string, enum: [queued, running, done, failed] }
+        labels:
+          type: array
+          items: { $ref: "#/components/schemas/Label" }
+          description: Present when status is "done"
+        model_version: { type: string, description: "Present when status is done", examples: ["vmod-2026-05-01"] }
+        error:
+          $ref: "#/components/schemas/Error"
+        request_id: { type: string, format: uuid }
+
+  responses:
+    BadRequest:
+      description: Malformed request body or invalid parameters
+      headers:
+        X-Request-ID: { schema: { type: string, format: uuid } }
+      content:
+        application/json:
+          schema: { $ref: "#/components/schemas/Error" }
+
+    Unauthorized:
+      description: Missing or invalid API key
+      headers:
+        X-Request-ID: { schema: { type: string, format: uuid } }
+      content:
+        application/json:
+          schema: { $ref: "#/components/schemas/Error" }
+
+    PayloadTooLarge:
+      description: One or more images exceed the 5 MB size limit
+      headers:
+        X-Request-ID: { schema: { type: string, format: uuid } }
+      content:
+        application/json:
+          schema: { $ref: "#/components/schemas/Error" }
+
+    UnprocessableEntity:
+      description: Request is well-formed but semantically invalid (e.g. unsupported image format, invalid top_k)
+      headers:
+        X-Request-ID: { schema: { type: string, format: uuid } }
+      content:
+        application/json:
+          schema: { $ref: "#/components/schemas/Error" }
+
+    TooManyRequests:
+      description: Rate limit exceeded
+      headers:
+        X-Request-ID: { schema: { type: string, format: uuid } }
+      content:
+        application/json:
+          schema: { $ref: "#/components/schemas/Error" }
+
+    ServiceUnavailable:
+      description: Service temporarily unavailable
+      headers:
+        X-Request-ID: { schema: { type: string, format: uuid } }
+      content:
+        application/json:
+          schema: { $ref: "#/components/schemas/Error" }
+
+    NotFound:
+      description: Job not found, expired, or never existed
+      headers:
+        X-Request-ID: { schema: { type: string, format: uuid } }
+      content:
+        application/json:
+          schema: { $ref: "#/components/schemas/Error" }
